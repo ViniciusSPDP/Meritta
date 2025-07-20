@@ -19,9 +19,16 @@ model User {
   email     String   @unique // O email deve ser único
   password  String   // A senha que vamos armazenar (faremos o hash depois)
   createdAt DateTime @default(now()) // Data de criação do usuário
+  plan      String   @default("FREE") // <-- ADICIONE ESTA LINHA
+
 
   // Relação: Um usuário pode ter muitas mensagens
   messages  Message[]
+
+  // --- CAMPOS NOVOS PARA ASSINATURAS ---
+  stripeCustomerId       String?   @unique // O ID do cliente na Stripe
+  stripeSubscriptionId   String?   @unique // O ID da assinatura
+  stripeSubscriptionStatus String? // Status atual da assinatura (ex: active, past_due, canceled)
 }
 
 // 4. Define o modelo (tabela) de Mensagens (Message)

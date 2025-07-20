@@ -13,6 +13,14 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
+  if (user?.plan !== 'PRO') {
+    return NextResponse.json(
+      { error: "Apenas usuários PRO podem salvar mensagens." },
+      { status: 403 } // 403 Forbidden: Acesso negado
+    );
+  }
+
   try {
     const message = await prisma.message.findUnique({
       where: {

@@ -1,12 +1,31 @@
 // src/app/api/evolution/qr/route.ts
 
 import { NextResponse } from "next/server";
+// --- IMPORTAÇÕES ADICIONADAS ---
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+// -----------------------------
 
 const API_URL = process.env.EVOLUTION_API_URL;
 const API_KEY = process.env.EVOLUTION_API_KEY;
 const INSTANCE_NAME = "Meritta"; // O nome da sua instância
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user?.id) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  // --- NOVA VERIFICAÇÃO DE PLANO ---
+  const user = await prisma.user.findUnique({ where: { id: session.user.id } });
+  if (user?.plan !== 'PRO') {
+    return NextResponse.json(
+      { error: "Apenas usuários PRO podem ver o QR Code." },
+      { status: 403 }
+    );
+  }
+
   if (!API_URL || !API_KEY) {
     return NextResponse.json(
       { error: "Variáveis de ambiente da Evolution API não configuradas." },
