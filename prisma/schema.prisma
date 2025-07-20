@@ -1,0 +1,36 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// 1. Define o gerador de cliente. Ele vai gerar o Prisma Client para TypeScript.
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 2. Define a fonte de dados, nosso banco de dados PostgreSQL.
+// Ele usa a variável de ambiente DATABASE_URL que configuramos.
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 3. Define o modelo (tabela) de Usuários (User)
+model User {
+  id        String   @id @default(cuid()) // Chave primária, usando um CUID (ID único)
+  email     String   @unique // O email deve ser único
+  password  String   // A senha que vamos armazenar (faremos o hash depois)
+  createdAt DateTime @default(now()) // Data de criação do usuário
+
+  // Relação: Um usuário pode ter muitas mensagens
+  messages  Message[]
+}
+
+// 4. Define o modelo (tabela) de Mensagens (Message)
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String @unique // <-- A MUDANÇA PRINCIPAL ESTÁ AQUI
+}
