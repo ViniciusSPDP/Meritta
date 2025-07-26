@@ -4,6 +4,8 @@ import { Session } from "next-auth";
 import { signOut } from "next-auth/react";
 import { useEffect, useState, SVGProps } from "react";
 import { loadStripe } from '@stripe/stripe-js';
+import { useSearchParams } from 'next/navigation';
+//import { useSearchParams, useRouter } from 'next/navigation';
 
 // --- Ícones em SVG como componentes para reutilização ---
 const SpinnerIcon = (props: SVGProps<SVGSVGElement>) => (
@@ -18,6 +20,12 @@ const SpinnerIcon = (props: SVGProps<SVGSVGElement>) => (
 const ErrorIcon = (props: SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...props}>
         <path fill="currentColor" d="M12,1.25A10.75,10.75,0,1,0,22.75,12,10.76,10.76,0,0,0,12,1.25Zm0,20A9.25,9.25,0,1,1,21.25,12,9.26,9.26,0,0,1,12,21.25Zm-1-4h2V15H11Zm0-10h2v7H11Z"></path>
+    </svg>
+);
+
+const CheckIcon = (props: SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...props}>
+        <path fill="currentColor" d="M9,20.42L2.79,14.21L5.62,11.38L9,14.77L18.88,4.88L21.71,7.71L9,20.42Z" />
     </svg>
 );
 
@@ -49,13 +57,16 @@ const StripeIcon = (props: SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" {...props}><path fill="currentColor" d="M22.1 12.1c0 3.3-2.3 5.4-6.3 5.4h-2.1v-4.1h2c1.9 0 3.2-.8 3.2-2.7c0-1.8-1.3-2.6-3.1-2.6h-2v10.3H8.7V6.5h6.3c3.6 0 5.9 2.1 5.9 5.6M4.9 6.5h3v11H4.9zm-3.8 0h3v11h-3z" /></svg>
 );
 
-
 interface DashboardProps {
     session: Session;
     userPlan: string;
 }
 
 export default function Dashboard({ session, userPlan }: DashboardProps) {
+    const searchParams = useSearchParams();
+    //const router = useRouter();
+    
+    // Estados existentes
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [isLoadingQr, setIsLoadingQr] = useState(true);
     const [qrError, setQrError] = useState<string | null>(null);
@@ -67,8 +78,26 @@ export default function Dashboard({ session, userPlan }: DashboardProps) {
     const [isLoadingMessage, setIsLoadingMessage] = useState(true);
 
     const [isCheckingOut, setIsCheckingOut] = useState(false);
+    
+    // Novos estados para notificações de pagamento
+    const [paymentStatus, setPaymentStatus] = useState<'success' | 'cancel' | null>(null);
 
     useEffect(() => {
+        // Verificar parâmetros de pagamento
+        const payment = searchParams?.get('payment');
+        if (payment === 'success' || payment === 'cancel') {
+            setPaymentStatus(payment as 'success' | 'cancel');
+            
+            // Limpar URL após 5 segundos
+            setTimeout(() => {
+                setPaymentStatus(null);
+                // Remove o parâmetro da URL sem recarregar a página
+                const url = new URL(window.location.href);
+                url.searchParams.delete('payment');
+                window.history.replaceState({}, '', url.toString());
+            }, 5000);
+        }
+
         // Apenas busca os dados PRO se o usuário realmente for PRO.
         if (userPlan === 'PRO') {
             const fetchProData = async () => {
@@ -105,7 +134,7 @@ export default function Dashboard({ session, userPlan }: DashboardProps) {
             };
             fetchProData();
         }
-    }, [userPlan]);
+    }, [userPlan, searchParams]);
 
     const handleSaveMessage = async () => {
         if (!messageContent.trim()) return;
@@ -149,70 +178,103 @@ export default function Dashboard({ session, userPlan }: DashboardProps) {
         }
     };
 
-const handleCheckout = async () => {
-    setIsCheckingOut(true);
-    try {
-        console.log('Iniciando checkout...');
-        
-        const response = await fetch('/api/stripe/checkout-session', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID, // Adicione esta variável no .env
-                // ou use um valor fixo: priceId: 'price_1QTYexGbGYvKVyEvs5d4iBJk'
-            }),
-        });
+    const handleCheckout = async () => {
+        setIsCheckingOut(true);
+        try {
+            console.log('Iniciando checkout...');
+            
+            const response = await fetch('/api/stripe/checkout-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID,
+                }),
+            });
 
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Erro na resposta:', errorData);
-            throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Erro na resposta:', errorData);
+                throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log('Dados recebidos:', data);
+            
+            const { sessionId, error } = data;
+            
+            if (error) {
+                throw new Error(error);
+            }
+            
+            if (!sessionId) {
+                throw new Error("Session ID não foi retornado pelo servidor");
+            }
+
+            console.log('Session ID recebido:', sessionId);
+
+            const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+            if (!stripe) {
+                throw new Error("Erro ao carregar o Stripe");
+            }
+
+            console.log('Redirecionando para checkout...');
+            const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
+            
+            if (stripeError) {
+                throw new Error(stripeError.message);
+            }
+
+        } catch (error) {
+            console.error("Erro detalhado no checkout:", error);
+            
+            const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+            alert(`Erro no checkout: ${errorMessage}`);
+            
+            setIsCheckingOut(false);
         }
-
-        const data = await response.json();
-        console.log('Dados recebidos:', data);
-        
-        const { sessionId, error } = data;
-        
-        if (error) {
-            throw new Error(error);
-        }
-        
-        if (!sessionId) {
-            throw new Error("Session ID não foi retornado pelo servidor");
-        }
-
-        console.log('Session ID recebido:', sessionId);
-
-        const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-        if (!stripe) {
-            throw new Error("Erro ao carregar o Stripe");
-        }
-
-        console.log('Redirecionando para checkout...');
-        const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
-        
-        if (stripeError) {
-            throw new Error(stripeError.message);
-        }
-
-    } catch (error) {
-        console.error("Erro detalhado no checkout:", error);
-        
-        // Mostrar erro específico em vez de mensagem genérica
-        const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
-        alert(`Erro no checkout: ${errorMessage}`);
-        
-        setIsCheckingOut(false);
-    }
-};
+    };
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-lime-50">
+            {/* Notificações de Pagamento */}
+            {paymentStatus && (
+                <div className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-lg border-2 max-w-md transition-all duration-300 ${
+                    paymentStatus === 'success' 
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                        : 'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                    <div className="flex items-center gap-3">
+                        {paymentStatus === 'success' ? (
+                            <CheckIcon className="w-6 h-6 text-emerald-600" />
+                        ) : (
+                            <ErrorIcon className="w-6 h-6 text-red-600" />
+                        )}
+                        <div className="flex-1">
+                            <h4 className="font-semibold">
+                                {paymentStatus === 'success' ? 'Pagamento Confirmado! 🎉' : 'Pagamento Cancelado'}
+                            </h4>
+                            <p className="text-sm mt-1">
+                                {paymentStatus === 'success' 
+                                    ? 'Sua assinatura foi ativada com sucesso. Bem-vindo ao Plano PRO!' 
+                                    : 'O pagamento foi cancelado. Você pode tentar novamente quando desejar.'}
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => setPaymentStatus(null)}
+                            className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <header className="bg-gradient-to-r from-emerald-600 via-green-600 to-lime-600 shadow-xl">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-6">
@@ -369,7 +431,7 @@ const handleCheckout = async () => {
                             ) : (
                                 <>
                                     <div>
-                                        <h3 className="text-2xl font-bold text-gray-800">R$ 50,00 <span className="text-base font-normal text-gray-500">/ mês</span></h3>
+                                        <h3 className="text-2xl font-bold text-gray-800">R$ 104,90 <span className="text-base font-normal text-gray-500">/ mês</span></h3>
                                         <p className="text-gray-600">Assine o Plano PRO.</p>
                                     </div>
                                     <button
