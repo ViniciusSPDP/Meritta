@@ -149,35 +149,67 @@ export default function Dashboard({ session, userPlan }: DashboardProps) {
         }
     };
 
-    const handleCheckout = async () => {
-        setIsCheckingOut(true);
-        try {
-            const response = await fetch('/api/stripe/checkout-session', {
-                method: 'POST',
-            });
+const handleCheckout = async () => {
+    setIsCheckingOut(true);
+    try {
+        console.log('Iniciando checkout...');
+        
+        const response = await fetch('/api/stripe/checkout-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID, // Adicione esta variável no .env
+                // ou use um valor fixo: priceId: 'price_1QTYexGbGYvKVyEvs5d4iBJk'
+            }),
+        });
 
-            const { sessionId } = await response.json();
-            if (!sessionId) {
-                alert("Não foi possível iniciar o pagamento. Tente novamente.");
-                setIsCheckingOut(false);
-                return;
-            }
-
-            const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-            if (!stripe) {
-                alert("Erro ao carregar o sistema de pagamento.");
-                setIsCheckingOut(false);
-                return;
-            }
-
-            await stripe.redirectToCheckout({ sessionId });
-
-        } catch (error) {
-            console.error("Erro no checkout:", error);
-            alert("Ocorreu um erro. Por favor, tente novamente.");
-            setIsCheckingOut(false);
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Erro na resposta:', errorData);
+            throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
         }
-    };
+
+        const data = await response.json();
+        console.log('Dados recebidos:', data);
+        
+        const { sessionId, error } = data;
+        
+        if (error) {
+            throw new Error(error);
+        }
+        
+        if (!sessionId) {
+            throw new Error("Session ID não foi retornado pelo servidor");
+        }
+
+        console.log('Session ID recebido:', sessionId);
+
+        const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+        if (!stripe) {
+            throw new Error("Erro ao carregar o Stripe");
+        }
+
+        console.log('Redirecionando para checkout...');
+        const { error: stripeError } = await stripe.redirectToCheckout({ sessionId });
+        
+        if (stripeError) {
+            throw new Error(stripeError.message);
+        }
+
+    } catch (error) {
+        console.error("Erro detalhado no checkout:", error);
+        
+        // Mostrar erro específico em vez de mensagem genérica
+        const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
+        alert(`Erro no checkout: ${errorMessage}`);
+        
+        setIsCheckingOut(false);
+    }
+};
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-lime-50">
