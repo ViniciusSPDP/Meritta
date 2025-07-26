@@ -97,8 +97,8 @@ export async function POST(request: NextRequest) {
         quantity: 1,
       }],
       mode: 'subscription',
-      success_url: `${process.env.NEXTAUTH_URL}/dashboard?payment=success`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/dashboard?payment=cancel`,
+      success_url: `${process.env.NEXTAUTH_URL}/?payment=success`,
+      cancel_url: `${process.env.NEXTAUTH_URL}/?payment=cancel`,
       metadata: {
         userId: dbUser.id,
       },
